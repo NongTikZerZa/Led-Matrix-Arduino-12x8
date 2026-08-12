@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Thai LED Matrix 12×8 — V5</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #080d18; color: #eef3ff; font-family: system-ui, Tahoma, sans-serif; }
+.wrap { max-width: 1200px; margin: auto; padding: 22px; }
+h1 { margin: 0; font-size: 28px; }
+.muted { color: #91a0bc; font-size: 13px; margin-top: 4px; }
+.grid { display: grid; grid-template-columns: 380px 1fr; gap: 16px; margin-top: 16px; }
+.card { background: #111a2d; border: 1px solid #293858; border-radius: 16px; padding: 18px; }
+
+/* Controls */
+label { display: block; color: #b8c5df; font-size: 13px; margin: 10px 0 4px; font-weight: bold; }
+textarea, select, input { width: 100%; background: #080f1f; color: white; border: 1px solid #31415f; border-radius: 10px; padding: 10px; font-family: inherit; }
+textarea { font-size: 24px; min-height: 80px; resize: vertical; text-align: center; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 700; background: #ff7a00; color: #111; transition: 0.2s; }
+button:hover { filter: brightness(1.1); }
+button.secondary { background: #2a3958; color: white; }
+.actions { display: flex; gap: 8px; margin-top: 16px; }
+
+.preview {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    min-height: 480px; 
+    background: #f8f9fa; /* Lighter background to match image 2 */
+    border-color: #dee2e6;
+}
+.matrix-container {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border: 1px solid #e9ecef;
+    width: 100%; /* บังคับให้กางออกเต็มพื้นที่ */
+    max-width: 550px; /* แต่ไม่ให้ใหญ่เกิน 550px */
+}
+.matrix {
+    width: 100%; /* กางให้เต็มคอนเทนเนอร์ */
+    aspect-ratio: 12/8;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-template-rows: repeat(8, 1fr); /* แก้มองไม่เห็น: บังคับให้มีความสูง 8 แถวเสมอ */
+    gap: 1px; /* Very thin grid lines */
+    background: #ced4da; /* Grid line color */
+    border: 1px solid #adb5bd;
+}
+.led {
+    background: #ffffff; /* Empty cell color */
+    border-radius: 0px; /* Sharp squares like Image 2 */
+    cursor: crosshair;
+}
+.led.on {
+    background: #343a40; /* Solid dark gray for '1' bit */
+}
+
+/* Font Editor Styling */
+.editor-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr); /* ขยายเป็น 12 คอลัมน์ให้เหมือนหน้าจอจริง */
+    grid-template-rows: repeat(8, 1fr);
+    gap: 1px;
+    background: #ced4da;
+    border: 1px solid #adb5bd;
+    width: 100%;
+    max-width: 360px;
+    aspect-ratio: 12/8;
+    margin: 10px auto;
+}
+.editor-cell {
+    background: #ffffff;
+    cursor: pointer;
+}
+.editor-cell.active { background: #343a40; }
+.editor-cell.disabled { background: #e9ecef; }
+
+/* Code Area */
+pre { background: #060b15; border: 1px solid #293858; padding: 14px; border-radius: 12px; white-space: pre; overflow: auto; max-height: 520px; font: 13px/1.55 Consolas, monospace; user-select: text; }
+.codehead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.status { margin-top: 10px; font-size: 13px; color: #7ed6a0; font-weight: bold; text-align: center;}
+@media(max-width: 850px){ .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Thai LED Matrix <span style="font-size:0.5em;color:#ff7a00">V5 (True Pixel Bitmap)</span></h1>
+<div class="muted">สร้างจากระบบพิกเซล 0 และ 1 โดยตรง ไม่พึ่งพาฟอนต์ในเครื่อง คมกริบ 100%</div>
+
+<div class="grid">
+<section class="card">
+<label>ข้อความที่ต้องการแสดง</label>
+<textarea id="text">สวัสดีครับ</textarea>
+
+<div class="row" style="margin-top:10px">
+  <div>
+    <label>ความเร็ว (ms)</label>
+    <input id="speed" type="number" min="20" max="2000" value="150">
+  </div>
+  <div>
+    <label>ระยะห่างตัวอักษร</label>
+    <input id="gap" type="number" min="0" max="5" value="1">
+  </div>
+</div>
+
+<div style="margin-top:10px">
+  <label>รูปแบบการเลื่อน</label>
+  <select id="mode">
+    <option value="loop">วนซ้ำ (ขวาไปซ้ายอย่างเดียว)</option>
+    <option value="pingpong" selected>ไป-กลับ (ขวาไปซ้าย แล้วซ้ายไปขวา)</option>
+  </select>
+</div>
+
+<div class="actions">
+  <button id="play" style="flex:1">▶ ดูตัวอย่าง (Play)</button>
+  <button id="stop" class="secondary">■ หยุด (Stop)</button>
+</div>
+<div id="status" class="status"></div>
+
+<hr style="border:0; border-top:1px solid #293858; margin: 24px 0;">
+
+<div style="text-align: center;">
+  <label style="color:#ff7a00; font-size:16px;">🛠️ ตัวแก้ไขฟอนต์พิกเซล (Font Editor)</label>
+  <div class="muted" style="margin-bottom:12px;">หากตัวอักษรไหนไม่สวย สามารถวาดใหม่ที่นี่ได้เลย</div>
+  <div style="display:flex; justify-content:center; gap:10px; align-items:center;">
+    <span>เลือกตัวอักษร:</span>
+    <input id="editChar" type="text" maxlength="1" value="ส" style="width: 50px; text-align:center; font-size:20px;">
+    <button id="loadChar" class="secondary" style="padding: 6px 12px;">โหลด</button>
+  </div>
+  
+  <div id="editor" class="editor-grid"></div>
+  
+  <div style="display:flex; justify-content:center; gap:10px; align-items:center; margin-top:8px;">
+    <label style="margin:0; color:#b8c5df; font-size:14px;">ความกว้างจริงของตัวอักษร (1-12):</label>
+    <input id="charWidth" type="number" min="1" max="12" value="5" style="width:70px; text-align:center; padding:6px; font-size:16px;">
+  </div>
+  
+  <div style="display:flex; justify-content:center; gap:10px; margin-top:16px;">
+    <button id="saveChar">💾 บันทึกและอัปเดตจอ</button>
+    <button id="clearChar" class="secondary">ล้าง</button>
+  </div>
+</div>
+</section>
+
+<section class="card preview">
+  <div class="matrix-container">
+    <div id="matrix" class="matrix"></div>
+  </div>
+  <div id="frameInfo" style="color: #6c757d; font-size: 14px; margin-top: 16px; font-weight: bold;">Frame 1 / 1</div>
+</section>
+</div>
+
+<section class="card" style="margin-top:16px">
+<div class="codehead"><b>Arduino C++ Code</b><div style="display:flex;gap:8px"><button id="copyCode" class="secondary">📋 Copy Code</button><button id="download" class="secondary">Download .ino</button></div></div>
+<pre id="code"></pre>
+</section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let frames = [], idx = 0, timer = null, dir = 1;
+
+// พจนานุกรมฟอนต์ (กว้างอิสระ, สูง 8 แถวเสมอ)
+// 0 = ปิด, 1 = เปิด
+const FONT_MAP = {
+  // --- พยัญชนะหลัก (กว้าง 4-5 พิกเซล, อยู่ในแถวที่ 3-7) ---
+  "ส": ["00010","00010","00000","01110","10001","10001","11111","10001"], // หางยาวไปแถว 0,1
+  "ว": ["0000","0000","0000","0110","1001","1001","1001","0110"],
+  "ด": ["0000","0000","0000","0110","1001","1111","1001","1001"],
+  "ค": ["0000","0000","0000","0111","1000","1000","1000","1000"],
+  "ร": ["0000","0000","0000","0111","1000","1000","1000","1000"],
+  "บ": ["0000","0000","0000","1001","1001","1001","1001","0111"],
+  "ก": ["0000","0000","0000","0110","1001","1001","1001","1001"],
+  "ข": ["0000","0000","0000","0110","1010","1100","1000","0111"],
+  "ม": ["0000","0000","0000","1001","1001","1011","1110","1001"],
+  "น": ["0000","0000","0000","1110","1001","1001","1011","1110"],
+  "ท": ["0000","0000","0000","0110","1010","1110","1010","1001"],
+  "ห": ["0000","0000","0000","1001","1101","1011","1001","1001"],
+  "ป": ["0001","0001","0001","1001","1001","1001","1001","0111"], // หางยาว
+  "อ": ["0000","0000","0000","0110","1001","1001","1001","0110"],
+  "ง": ["0000","0000","0000","0001","0001","0001","1001","0110"],
+  
+  // --- สระและวรรณยุกต์ (ออกแบบให้อยู่แถว 0-2 และ 7) ---
+  "ั": ["0000","0110","1001","0000","0000","0000","0000","0000"], // ไม้หันอากาศ
+  "ี": ["0000","0111","0001","0000","0000","0000","0000","0000"], // สระอี
+  "ิ": ["0000","0111","0000","0000","0000","0000","0000","0000"], // สระอิ
+  "่": ["0010","0010","0000","0000","0000","0000","0000","0000"], // ไม้เอก
+  "้": ["0010","0101","0010","0000","0000","0000","0000","0000"], // ไม้โท
+  "ุ": ["0000","0000","0000","0000","0000","0000","0110","0110"], // สระอุ
+  "ู": ["0000","0000","0000","0000","0000","0000","0110","1111"], // สระอู
+  
+  "า": ["0000","0000","0000","0110","1001","1001","1001","1001"],
+  "เ": ["0000","0000","0000","0110","0110","0010","0010","0111"],
+  
+  " ": ["00", "00", "00", "00", "00", "00", "00", "00"]
+};
+
+// สระ/วรรณยุกต์ที่จะดึงไปซ้อนทับตัวพยัญชนะด้านหน้า
+const OVERLAP_CHARS = ["ั", "ิ", "ี", "ึ", "ื", "ุ", "ู", "่", "้", "๊", "๋", "์"];
+
+function generateFrames() {
+  let text = $("text").value;
+  // แทนที่ แ ด้วย เ เ และ ำ ด้วย ํ า เพื่อให้วาดง่ายขึ้น
+  text = text.replace(/แ/g, "เเ").replace(/ำ/g, "ํา");
+  
+  const gap = Number($("gap").value) || 1;
+  let fullMatrix = [[], [], [], [], [], [], [], []]; // 8 แถว
+  
+  let lastCharWidth = 0;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    
+    // ดึงข้อมูลพิกเซล (ถ้าไม่มีให้ใช้กรอบสี่เหลี่ยมแทน)
+    const bitmap = FONT_MAP[char] || [
+      "0000", "0110", "1001", "1001", "1001", "1001", "0110", "0000"
+    ];
+    
+    const width = bitmap[0].length;
+
+    // ตรวจสอบว่าเป็นสระ/วรรณยุกต์ที่ต้องซ้อนทับหรือไม่
+    if (OVERLAP_CHARS.includes(char) && fullMatrix[0].length > 0) {
+       // คำนวณคอลัมน์เริ่มต้นของพยัญชนะตัวที่แล้ว
+       const startCol = fullMatrix[0].length - lastCharWidth - gap;
+       
+       for (let r = 0; r < 8; r++) {
+         for (let c = 0; c < width; c++) {
+            const targetCol = startCol + c;
+            // ซ้อนทับ (OR logic) ถ้าพิกเซลใหม่เป็น 1 ให้ทับลงไป
+            if (targetCol >= 0 && bitmap[r][c] === '1') {
+               fullMatrix[r][targetCol] = 1;
+            }
+         }
+       }
+    } else {
+       // พยัญชนะปกติ หรือต่อท้าย
+       for (let r = 0; r < 8; r++) {
+         for (let c = 0; c < width; c++) {
+           fullMatrix[r].push(bitmap[r][c] === '1' ? 1 : 0);
+         }
+         // เพิ่มช่องว่าง (Gap)
+         for(let g=0; g<gap; g++) fullMatrix[r].push(0);
+       }
+       lastCharWidth = width;
+    }
+  }
+
+  // หากข้อความว่างเปล่า
+  if (fullMatrix[0].length === 0) {
+     return Array(1).fill(Array(96).fill(0));
+  }
+
+  // สร้าง Frame แบบเลื่อน (Scrolling) 
+  // บวก padding ซ้าย-ขวา 12 คอลัมน์ (ให้เลื่อนเข้า-ออกจนสุดจอ)
+  const result = [];
+  const totalCols = fullMatrix[0].length;
+  const paddingCols = 12; 
+  
+  for (let startCol = -paddingCols; startCol < totalCols; startCol++) {
+    const frame = [];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 12; c++) {
+        const matrixCol = startCol + c;
+        if (matrixCol >= 0 && matrixCol < totalCols) {
+          frame.push(fullMatrix[r][matrixCol]);
+        } else {
+          frame.push(0); // ว่างเปล่า
+        }
+      }
+    }
+    result.push(frame);
+  }
+  return result;
+}
+
+function drawMatrix() {
+  const m = $("matrix"); 
+  m.innerHTML = "";
+  const f = frames[idx] || Array(96).fill(0);
+  
+  for (let i = 0; i < 96; i++) {
+    const d = document.createElement("div");
+    d.className = "led" + (f[i] ? " on" : "");
+    m.appendChild(d);
+  }
+  $("frameInfo").textContent = `Frame ${idx + 1} / ${frames.length}`;
+}
+
+function compileCode() {
+  const speed = Math.max(20, Number($("speed").value) || 150);
+  const code = [];
+
+  code.push("// ========================================================");
+  code.push("// Thai LED Matrix 12x8 - V5 (Pixel Perfect Bitmap)");
+  code.push("// Frame data: 12x8 row-major, MSB-first");
+  code.push("// ========================================================");
+  code.push("");
+  code.push("#include <Arduino.h>");
+  code.push('#include "Arduino_LED_Matrix.h"');
+  code.push("");
+  code.push("ArduinoLEDMatrix matrix;");
+  code.push("");
+  code.push(`const int FRAME_COUNT = ${frames.length};`);
+  code.push(`const int FRAME_DELAY = ${speed};`);
+  code.push("");
+  code.push("const uint32_t frames[FRAME_COUNT][3] = {");
+
+  // Pack frames exactly for UNO R4 (Row-major)
+  for (const f of frames) {
+    const words = [0, 0, 0];
+    for (let i = 0; i < 96; i++) {
+      if (f[i]) {
+        const wordIndex = Math.floor(i / 32);
+        const bitIndex = i % 32;
+        words[wordIndex] = (words[wordIndex] | (0x80000000 >>> bitIndex)) >>> 0;
+      }
+    }
+    const h0 = "0x" + words[0].toString(16).padStart(8, "0").toUpperCase();
+    const h1 = "0x" + words[1].toString(16).padStart(8, "0").toUpperCase();
+    const h2 = "0x" + words[2].toString(16).padStart(8, "0").toUpperCase();
+    code.push(`  { ${h0}, ${h1}, ${h2} },`);
+  }
+
+  code.push("};");
+  code.push("");
+  code.push("void setup() {");
+  code.push("  matrix.begin();");
+  code.push("}");
+  code.push("");
+
+  const mode = $("mode").value;
+  if (mode === "pingpong") {
+    code.push("void loop() {");
+    code.push("  // เลื่อนจากขวาไปซ้าย");
+    code.push("  for (int i = 0; i < FRAME_COUNT; i++) {");
+    code.push("    matrix.loadFrame(frames[i]);");
+    code.push("    delay(FRAME_DELAY);");
+    code.push("  }");
+    code.push("");
+    code.push("  // เลื่อนกลับจากซ้ายมาขวา");
+    code.push("  for (int i = FRAME_COUNT - 2; i > 0; i--) {");
+    code.push("    matrix.loadFrame(frames[i]);");
+    code.push("    delay(FRAME_DELAY);");
+    code.push("  }");
+    code.push("}");
+  } else {
+    code.push("void loop() {");
+    code.push("  for (int i = 0; i < FRAME_COUNT; i++) {");
+    code.push("    matrix.loadFrame(frames[i]);");
+    code.push("    delay(FRAME_DELAY);");
+    code.push("  }");
+    code.push("}");
+  }
+
+  $("code").textContent = code.join("\n");
+}
+
+function updateApp() {
+  frames = generateFrames();
+  idx = 0;
+  drawMatrix();
+  compileCode();
+  $("status").textContent = `สร้างภาพสำเร็จ (${frames.length} frames) — คมชัด 100%`;
+}
+
+const editorGrid = $("editor");
+let currentEditData = Array(8).fill().map(() => Array(12).fill(0));
+let editWidth = 5;
+
+function renderEditor() {
+  editorGrid.innerHTML = "";
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 12; c++) {
+      const cell = document.createElement("div");
+      cell.className = "editor-cell";
+      if (currentEditData[r][c]) cell.classList.add("active");
+      
+      // ทำเครื่องหมายช่องที่เกินความกว้างจริงเป็นสีเทาจาง (ส่วนนี้จะไม่ถูกเซฟลงข้อมูลฟอนต์)
+      if (c >= editWidth) cell.classList.add("disabled");
+      
+      cell.onmousedown = (e) => {
+         // Toggle สีพิกเซล
+         currentEditData[r][c] = currentEditData[r][c] ? 0 : 1;
+         
+         // อัปเดตความกว้างอัตโนมัติเมื่อคลิกจุดที่เลยขอบเขตเดิม
+         if (c >= editWidth && currentEditData[r][c]) {
+             editWidth = c + 1;
+             $("charWidth").value = editWidth;
+         }
+         
+         renderEditor();
+      };
+      editorGrid.appendChild(cell);
+    }
+  }
+}
+
+$("charWidth").onchange = (e) => {
+  editWidth = Math.max(1, Math.min(12, Number(e.target.value)));
+  renderEditor();
+};
+
+$("loadChar").onclick = () => {
+  const char = $("editChar").value;
+  if (!char) return;
+  
+  // รีเซ็ตข้อมูลเป็นตาราง 12x8 ว่างๆ
+  currentEditData = Array(8).fill().map(() => Array(12).fill(0));
+  
+  const bitmap = FONT_MAP[char] || ["0000","0000","0000","0000","0000","0000","0000","0000"];
+  editWidth = bitmap[0].length;
+  $("charWidth").value = editWidth;
+  
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < Math.min(12, editWidth); c++) {
+      currentEditData[r][c] = bitmap[r][c] === '1' ? 1 : 0;
+    }
+  }
+  renderEditor();
+};
+
+$("clearChar").onclick = () => {
+  currentEditData = Array(8).fill().map(() => Array(12).fill(0));
+  renderEditor();
+};
+
+$("saveChar").onclick = () => {
+  const char = $("editChar").value;
+  if (!char) return;
+  
+  // แปลง Array กลับเป็น String Array
+  const newBitmap = [];
+  for (let r = 0; r < 8; r++) {
+    let rowStr = "";
+    for (let c = 0; c < editWidth; c++) {
+      rowStr += currentEditData[r][c] ? "1" : "0";
+    }
+    newBitmap.push(rowStr);
+  }
+  
+  FONT_MAP[char] = newBitmap;
+  updateApp();
+  alert(`บันทึกตัวอักษร "${char}" ลงในหน่วยความจำชั่วคราวแล้ว!`);
+};
+
+$("text").oninput = updateApp;
+$("gap").onchange = updateApp;
+$("speed").onchange = compileCode;
+$("mode").onchange = () => { compileCode(); idx = 0; dir = 1; drawMatrix(); };
+
+$("play").onclick = () => {
+  clearInterval(timer);
+  const delay = Math.max(20, Number($("speed").value) || 150);
+  const mode = $("mode").value;
+  dir = 1; // เริ่มต้นเลื่อนไปข้างหน้าเสมอเมื่อกด play
+  
+  timer = setInterval(() => {
+    if (mode === "pingpong") {
+      idx += dir;
+      if (idx >= frames.length - 1) {
+        idx = frames.length - 1;
+        dir = -1; // เปลี่ยนทิศเป็นถอยหลัง
+      } else if (idx <= 0) {
+        idx = 0;
+        dir = 1;  // เปลี่ยนทิศเป็นเดินหน้า
+      }
+    } else {
+      idx = (idx + 1) % frames.length;
+    }
+    drawMatrix();
+  }, delay);
+};
+
+$("stop").onclick = () => clearInterval(timer);
+
+$("copyCode").onclick = async () => {
+  const text = $("code").textContent;
+  const box = document.createElement("textarea");
+  box.value = text;
+  document.body.appendChild(box);
+  box.select();
+  document.execCommand("copy");
+  document.body.removeChild(box);
+  $("copyCode").textContent = "✅ Copied!";
+  setTimeout(() => $("copyCode").textContent = "📋 Copy Code", 1500);
+};
+
+$("download").onclick = () => {
+  const blob = new Blob([$("code").textContent], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pixel_font_v5.ino";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+// Initial Load
+renderEditor();
+updateApp();
+$("loadChar").click(); // โหลดตัว 'ส' ขึ้นมาโชว์ตอนเริ่ม
+</script>
+</body>
+</html>
